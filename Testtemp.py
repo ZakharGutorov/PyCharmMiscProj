@@ -18,6 +18,11 @@ from xml.dom import minidom
 from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
 # --- PyQt5 Imports ---
 from PyQt5.QtWidgets import (
@@ -270,7 +275,7 @@ class SystemMonitorApp(QMainWindow):
         self.main_layout.setSpacing(0)
         self.init_sidebar()
         self.init_content_area()
-        self.statusBar().showMessage("Ready")
+        self.statusBar().showMessage("Используется")
 
     def init_sidebar(self):
         self.sidebar = QFrame()
@@ -280,12 +285,12 @@ class SystemMonitorApp(QMainWindow):
         self.sidebar_layout.setContentsMargins(10, 10, 10, 10)
         self.sidebar_layout.setSpacing(8)
         buttons = [
-            ("Dashboard", lambda: self.tabs.setCurrentIndex(0)), ("CPU", lambda: self.tabs.setCurrentIndex(1)),
-            ("Memory", lambda: self.tabs.setCurrentIndex(2)), ("Disk", lambda: self.tabs.setCurrentIndex(3)),
-            ("GPU", lambda: self.tabs.setCurrentIndex(4)), ("Network", lambda: self.tabs.setCurrentIndex(5)),
-            ("Multi-Device", lambda: self.tabs.setCurrentIndex(6)), ("Alerts", lambda: self.tabs.setCurrentIndex(7)),
-            ("Reports", lambda: self.tabs.setCurrentIndex(8)), ("Settings", lambda: self.tabs.setCurrentIndex(9)),
-            ("Tools", lambda: self.tabs.setCurrentIndex(10))
+            ("Главный экран", lambda: self.tabs.setCurrentIndex(0)), ("ЦПУ", lambda: self.tabs.setCurrentIndex(1)),
+            ("ОЗУ", lambda: self.tabs.setCurrentIndex(2)), ("Диски", lambda: self.tabs.setCurrentIndex(3)),
+            ("ГПУ", lambda: self.tabs.setCurrentIndex(4)), ("Сеть", lambda: self.tabs.setCurrentIndex(5)),
+            ("Несколько устройств", lambda: self.tabs.setCurrentIndex(6)), ("Уведомления", lambda: self.tabs.setCurrentIndex(7)),
+            ("Отчеты", lambda: self.tabs.setCurrentIndex(8)), ("Настройки", lambda: self.tabs.setCurrentIndex(9)),
+            ("Инструменты", lambda: self.tabs.setCurrentIndex(10))
         ]
         for text, handler in buttons:
             btn = QPushButton(text)
@@ -306,10 +311,10 @@ class SystemMonitorApp(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.tabBar().setVisible(False)
         tab_map = {
-            "Dashboard": self.dashboard_tab, "CPU": self.cpu_tab, "Memory": self.memory_tab, "Disk": self.disk_tab,
-            "GPU": self.gpu_tab, "Network": self.network_tab, "Multi-Device": self.multi_device_tab,
-            "Alerts": self.alerts_tab, "Reports": self.reports_tab, "Settings": self.settings_tab,
-            "Tools": self.tools_tab
+            "Главный экран": self.dashboard_tab, "ЦПУ": self.cpu_tab, "ОЗУ": self.memory_tab, "Диски": self.disk_tab,
+            "ГПУ": self.gpu_tab, "Сеть": self.network_tab, "Несколько устройств": self.multi_device_tab,
+            "Уведомления": self.alerts_tab, "Отчеты": self.reports_tab, "Настройки": self.settings_tab,
+            "Инструменты": self.tools_tab
         }
         for name, widget in tab_map.items(): self.tabs.addTab(widget, name)
         self.tabs.currentChanged.connect(self.on_tab_changed)
@@ -412,7 +417,7 @@ class SystemMonitorApp(QMainWindow):
 
     def init_dashboard(self):
         layout = QVBoxLayout(self.dashboard_tab)
-        overview_group, overview_layout = QGroupBox("System Overview"), QHBoxLayout()
+        overview_group, overview_layout = QGroupBox("Системные показатели"), QHBoxLayout()
         self.cpu_overview, self.memory_overview, self.disk_overview, self.gpu_overview = [
             QLabel(f"<b>{t}:</b> Loading...") for t in ["CPU", "Memory", "Disk", "GPU"]]
         for label in [self.cpu_overview, self.memory_overview, self.disk_overview,
@@ -430,16 +435,16 @@ class SystemMonitorApp(QMainWindow):
         self.cpu_ax = self.cpu_fig.add_subplot(111)
         self.cpu_usage_line, = self.cpu_ax.plot([], [], color='tab:blue', label='Usage')
         self.cpu_ax2 = self.cpu_ax.twinx()
-        self.cpu_temp_line, = self.cpu_ax2.plot([], [], color='tab:red', label='Temp')
-        self.setup_chart_axes(self.cpu_ax, self.cpu_ax2, 'CPU (%)', 'Temp (°C)', "CPU Monitor")
+        self.cpu_temp_line, = self.cpu_ax2.plot([], [], color='tab:red', label='ТЕМП')
+        self.setup_chart_axes(self.cpu_ax, self.cpu_ax2, 'Используется (%)', 'ТЕМП (°C)', "Мониторинг ЦПУ")
         self.gpu_dashboard_ax = self.gpu_dashboard_fig.add_subplot(111)
-        self.gpu_load_line, = self.gpu_dashboard_ax.plot([], [], color='tab:green', label='Load')
+        self.gpu_load_line, = self.gpu_dashboard_ax.plot([], [], color='tab:green', label='Нагрузка')
         self.gpu_ax2_dashboard = self.gpu_dashboard_ax.twinx()
-        self.gpu_temp_line_dashboard, = self.gpu_ax2_dashboard.plot([], [], color='tab:orange', label='Temp')
-        self.setup_chart_axes(self.gpu_dashboard_ax, self.gpu_ax2_dashboard, 'GPU (%)', 'Temp (°C)', "GPU Monitor")
-        alerts_group, alerts_layout = QGroupBox("Recent Alerts"), QVBoxLayout()
+        self.gpu_temp_line_dashboard, = self.gpu_ax2_dashboard.plot([], [], color='tab:orange', label='ТЕМП')
+        self.setup_chart_axes(self.gpu_dashboard_ax, self.gpu_ax2_dashboard, 'Используется (%)', 'ТЕМП (°C)', "ГПУ Мониторинг")
+        alerts_group, alerts_layout = QGroupBox("недавние оповещения"), QVBoxLayout()
         self.alerts_table_dashboard = QTableWidget(5, 3)
-        self.alerts_table_dashboard.setHorizontalHeaderLabels(["Time", "Component", "Message"])
+        self.alerts_table_dashboard.setHorizontalHeaderLabels(["Время", "Компонент", "Сообщение"])
         self.alerts_table_dashboard.horizontalHeader().setStretchLastSection(True)
         self.alerts_table_dashboard.setEditTriggers(QTableWidget.NoEditTriggers)
         alerts_layout.addWidget(self.alerts_table_dashboard)
@@ -469,8 +474,6 @@ class SystemMonitorApp(QMainWindow):
             line2.set_data(*zip(*valid_points2))
         else:
             line2.set_data([], [])
-
-        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
         # Устанавливаем границы оси X, только если у нас есть диапазон (больше 1 точки)
         if len(x1_data) > 1:
             ax.set_xlim(x1_data[0], x1_data[-1])
@@ -496,9 +499,9 @@ class SystemMonitorApp(QMainWindow):
         self.cpu_detail_usage_line, = self.cpu_detail_ax.plot([], [], color='tab:blue', label='Usage')
         self.cpu_detail_ax2 = self.cpu_detail_ax.twinx()
         self.cpu_detail_temp_line, = self.cpu_detail_ax2.plot([], [], color='tab:red', label='Temp')
-        self.setup_chart_axes(self.cpu_detail_ax, self.cpu_detail_ax2, 'CPU (%)', 'Temp (°C)', "CPU Full History")
+        self.setup_chart_axes(self.cpu_detail_ax, self.cpu_detail_ax2, 'ЦПУ (%)', 'ТЕМП (°C)', "ЦПУ ")
         self.cpu_table = QTableWidget(1, 4)
-        self.cpu_table.setHorizontalHeaderLabels(["Cores (Physical/Logical)", "Current Speed", "Max Speed", "Usage"])
+        self.cpu_table.setHorizontalHeaderLabels(["Ядра (Физические/Потоковые)", "Текущая скорость", "Макс скорость", "Использовано"])
         self.cpu_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.cpu_table)
 
@@ -521,14 +524,14 @@ class SystemMonitorApp(QMainWindow):
         self.memory_detail_canvas = FigureCanvas(self.memory_detail_fig)
         self.memory_detail_ax = self.memory_detail_fig.add_subplot(111)
         layout.addWidget(self.memory_detail_canvas)
-        self.mem_usage_line, = self.memory_detail_ax.plot([], [], 'g-', label="RAM Usage (%)")
+        self.mem_usage_line, = self.memory_detail_ax.plot([], [], 'g-', label="ОЗУ Используется(%)")
         self.memory_detail_ax.set_ylim(0, 105);
         self.memory_detail_ax.set_ylabel("Usage (%)")
         self.memory_detail_ax.grid(True);
         self.memory_detail_ax.legend();
         self.memory_detail_fig.tight_layout()
         self.memory_table = QTableWidget(2, 4)
-        self.memory_table.setHorizontalHeaderLabels(["Total", "Used", "Free", "Usage %"])
+        self.memory_table.setHorizontalHeaderLabels(["Всего", "Используется", "Свободно", "Исп в %"])
         self.memory_table.setVerticalHeaderLabels(["RAM", "Swap"])
         self.memory_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.memory_table)
@@ -563,7 +566,7 @@ class SystemMonitorApp(QMainWindow):
     def init_disk_tab(self):
         layout = QVBoxLayout(self.disk_tab)
         self.disk_table = QTableWidget(0, 5)
-        self.disk_table.setHorizontalHeaderLabels(["Mountpoint", "Total", "Used", "Free", "Usage %"])
+        self.disk_table.setHorizontalHeaderLabels(["Название", "Всего", "Занято", "Свободно", "Используется в %"])
         self.disk_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.disk_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.disk_table)
@@ -585,12 +588,12 @@ class SystemMonitorApp(QMainWindow):
         self.gpu_detail_canvas = FigureCanvas(self.gpu_detail_fig)
         layout.addWidget(self.gpu_detail_canvas)
         self.gpu_detail_ax = self.gpu_detail_fig.add_subplot(111)
-        self.gpu_detail_load_line, = self.gpu_detail_ax.plot([], [], color='tab:green', label='Load')
+        self.gpu_detail_load_line, = self.gpu_detail_ax.plot([], [], color='tab:green', label='Используется')
         self.gpu_detail_ax2 = self.gpu_detail_ax.twinx()
-        self.gpu_detail_temp_line, = self.gpu_detail_ax2.plot([], [], color='tab:orange', label='Temp')
-        self.setup_chart_axes(self.gpu_detail_ax, self.gpu_detail_ax2, 'GPU (%)', 'Temp (°C)', "GPU Full History")
+        self.gpu_detail_temp_line, = self.gpu_detail_ax2.plot([], [], color='tab:orange', label='Темп')
+        self.setup_chart_axes(self.gpu_detail_ax, self.gpu_detail_ax2, 'ГПУ (%)', 'Темп (°C)', "ГПУ")
         self.gpu_table = QTableWidget(0, 2)
-        self.gpu_table.setHorizontalHeaderLabels(["Metric", "Value"])
+        self.gpu_table.setHorizontalHeaderLabels(["Метрика", "Показатель"])
         self.gpu_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.gpu_table)
 
@@ -607,14 +610,14 @@ class SystemMonitorApp(QMainWindow):
                 self.gpu_table.setItem(i, 1, QTableWidgetItem(str(v)))
         else:
             self.gpu_table.setRowCount(1)
-            self.gpu_table.setItem(0, 0, QTableWidgetItem("GPU Info"));
-            self.gpu_table.setItem(0, 1, QTableWidgetItem("Not Available"))
+            self.gpu_table.setItem(0, 0, QTableWidgetItem("ГПУ информация"));
+            self.gpu_table.setItem(0, 1, QTableWidgetItem("Не определенно"))
 
     def init_network_tab(self):
         layout = QVBoxLayout(self.network_tab)
         self.network_table = QTableWidget(0, 5)
         self.network_table.setHorizontalHeaderLabels(
-            ["Interface", "Sent (Total)", "Recv (Total)", "Sent (Rate)", "Recv (Rate)"])
+            ["Интерфейс", "Отправлено(Всего)", "Принято(Всего)", "Скорость отправки", "Скорость скачивания"])
         self.network_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.network_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.network_table)
@@ -643,19 +646,19 @@ class SystemMonitorApp(QMainWindow):
         self.last_net_io, self.last_update_time = current_io, current_time
 
     def discover_network_devices(self):
-        self.statusBar().showMessage(" network device discovery");
+        self.statusBar().showMessage(" Обноружение устройства в сети");
         self.populate_simulated_devices()
-        QTimer.singleShot(2000, lambda: self.statusBar().showMessage("Ready"))
+        QTimer.singleShot(2000, lambda: self.statusBar().showMessage("Готово"))
 
     def init_multi_device_tab(self):
         layout, button_layout = QVBoxLayout(self.multi_device_tab), QHBoxLayout()
-        discover_btn = QPushButton(" Network Scan");
+        discover_btn = QPushButton(" Обновить");
         discover_btn.clicked.connect(self.discover_network_devices)
         button_layout.addWidget(discover_btn);
         button_layout.addStretch();
         layout.addLayout(button_layout)
         self.multi_device_table = QTableWidget(0, 5)
-        self.multi_device_table.setHorizontalHeaderLabels(["Device Name", "IP Address", "Status", "CPU %", "RAM %"])
+        self.multi_device_table.setHorizontalHeaderLabels(["Имя устройства", "IP ", "Статус", "ЦПУ %", "ОЗУ %"])
         self.multi_device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.multi_device_table.setEditTriggers(QTableWidget.NoEditTriggers);
         self.multi_device_table.setSortingEnabled(True)
@@ -697,23 +700,23 @@ class SystemMonitorApp(QMainWindow):
         if now - self.last_alert_time.get(alert_key, 0) < 300: return
         self.last_alert_time[alert_key] = now
         self.alert_history.appendleft(
-            {'time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'component': component, 'message': message})
+            {'Время': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Компонент': component, 'Сообщение': message})
         self.update_dashboard_alerts_view()
         if 7 in self.initialized_tabs: self.update_alerts_history_view()
-        if self.settings.get('popup_alerts', True): QMessageBox.warning(self, f"{component} Alert", message)
+        if self.settings.get('Всплывающие оповещения', True): QMessageBox.warning(self, f"{component} уведомление", message)
 
     def update_dashboard_alerts_view(self):
         if 0 in self.initialized_tabs:
             self.alerts_table_dashboard.clearContents()
             for i, alert in enumerate(list(self.alert_history)[:5]):
-                self.alerts_table_dashboard.setItem(i, 0, QTableWidgetItem(alert['time']))
-                self.alerts_table_dashboard.setItem(i, 1, QTableWidgetItem(alert['component']))
-                self.alerts_table_dashboard.setItem(i, 2, QTableWidgetItem(alert['message']))
+                self.alerts_table_dashboard.setItem(i, 0, QTableWidgetItem(alert['Время']))
+                self.alerts_table_dashboard.setItem(i, 1, QTableWidgetItem(alert['Компонент']))
+                self.alerts_table_dashboard.setItem(i, 2, QTableWidgetItem(alert['Сообщение']))
 
     def init_alerts_tab(self):
         layout = QVBoxLayout(self.alerts_tab)
         self.alert_history_table = QTableWidget(0, 3)
-        self.alert_history_table.setHorizontalHeaderLabels(["Time", "Component", "Message"])
+        self.alert_history_table.setHorizontalHeaderLabels(["Время", "Компонент", "Сообщение"])
         self.alert_history_table.horizontalHeader().setStretchLastSection(True)
         self.alert_history_table.setSortingEnabled(True)
         layout.addWidget(self.alert_history_table)
@@ -722,32 +725,32 @@ class SystemMonitorApp(QMainWindow):
         self.alert_history_table.setSortingEnabled(False)
         self.alert_history_table.setRowCount(len(self.alert_history))
         for i, alert in enumerate(self.alert_history):
-            self.alert_history_table.setItem(i, 0, QTableWidgetItem(alert['time']))
-            self.alert_history_table.setItem(i, 1, QTableWidgetItem(alert['component']))
-            self.alert_history_table.setItem(i, 2, QTableWidgetItem(alert['message']))
+            self.alert_history_table.setItem(i, 0, QTableWidgetItem(alert['Время']))
+            self.alert_history_table.setItem(i, 1, QTableWidgetItem(alert['Компонент']))
+            self.alert_history_table.setItem(i, 2, QTableWidgetItem(alert['Сообщение']))
         self.alert_history_table.setSortingEnabled(True)
 
     def init_tools_tab(self):
         layout = QVBoxLayout(self.tools_tab)
-        disk_group = QGroupBox("Disk Cleanup Tools")
+        disk_group = QGroupBox("Инструмент очистки диска")
         disk_layout = QVBoxLayout(disk_group)
-        self.temp_files_check = QCheckBox("Delete temporary files");
+        self.temp_files_check = QCheckBox("Удалить временные файлы");
         self.temp_files_check.setChecked(True)
-        self.cache_files_check = QCheckBox("Clear system cache (current user)")
+        self.cache_files_check = QCheckBox("Очистить системный кэш(текущий пользователь)")
         disk_layout.addWidget(self.temp_files_check);
         disk_layout.addWidget(self.cache_files_check)
-        cleanup_btn = QPushButton("Run Cleanup Now");
+        cleanup_btn = QPushButton("Запустить очистку");
         cleanup_btn.clicked.connect(self.run_disk_cleanup)
         disk_layout.addWidget(cleanup_btn)
         layout.addWidget(disk_group)
-        diag_group = QGroupBox("System Diagnostics & Network Tools")
+        diag_group = QGroupBox("Системная и сетевая диагностика ")
         diag_layout = QVBoxLayout(diag_group)
         btn_layout = QHBoxLayout()
-        disk_check_btn = QPushButton("Check Disk Health");
+        disk_check_btn = QPushButton("Проверить состояние диска");
         disk_check_btn.clicked.connect(self.check_disk_health_tool)
-        ping_btn = QPushButton("Ping Test");
+        ping_btn = QPushButton("Пинг тест");
         ping_btn.clicked.connect(self.run_ping_test)
-        speed_test_btn = QPushButton("Internet Speed Test");
+        speed_test_btn = QPushButton("Проверка скорости интернета");
         speed_test_btn.clicked.connect(self.run_speed_test)
         btn_layout.addWidget(disk_check_btn);
         btn_layout.addWidget(ping_btn);
@@ -809,40 +812,47 @@ class SystemMonitorApp(QMainWindow):
             total_files += files;
             total_size += size
             log.append(f"Deleted {files} files ({(size / 1024 ** 2):.2f} MB)")
-        log.append(f"\nCleanup finished. Total files: {total_files}. Total size: {(total_size / 1024 ** 2):.2f} MB.")
+        log.append(f"\nОчистка завершена. Всего файлов: {total_files}. Всего места: {(total_size / 1024 ** 2):.2f} MB.")
         self.tools_output.setPlainText("\n".join(log))
-        QMessageBox.information(self, "Cleanup Complete", f"Freed {(total_size / 1024 ** 2):.2f} MB of space.")
+        QMessageBox.information(self, "Очистка завершена", f"Freed {(total_size / 1024 ** 2):.2f} MB of space.")
 
     def run_ping_test(self):
         target = "8.8.8.8"
         self.tools_output.setPlainText(f"Pinging {target}...")
         QApplication.processEvents()
         try:
+            # Определяем параметр для количества запросов и кодировку для ОС
             param = '-n' if platform.system().lower() == 'windows' else '-c'
+            encoding = 'cp866' if platform.system().lower() == 'windows' else 'utf-8'
+
             cmd = ['ping', param, '4', target]
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=15)
+
+            # Запускаем процесс с правильной кодировкой
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding=encoding, errors='replace',
+                                    timeout=15)
+
             self.tools_output.setPlainText(result.stdout + "\n" + result.stderr)
         except Exception as e:
             self.tools_output.setPlainText(f"An error occurred: {str(e)}")
 
     def run_speed_test(self):
         if not self.speed_test_thread.isRunning():
-            self.tools_output.setPlainText("Starting internet speed test...")
+            self.tools_output.setPlainText("Запуск теста скорости интренета...")
             self.speed_test_thread.result_ready.connect(self.tools_output.setPlainText)
             self.speed_test_thread.start()
         else:
-            QMessageBox.warning(self, "In Progress", "A speed test is already running.")
+            QMessageBox.warning(self, "В процессе", "Тест скорости завершен.")
 
     def init_settings_tab(self):
         layout = QVBoxLayout(self.settings_tab)
         tabs, general_tab, general_layout = QTabWidget(), QWidget(), QFormLayout()
-        self.poll_map = {"1 second": 1000, "2 seconds": 2000, "5 seconds": 5000, "10 seconds": 10000,
-                         "30 seconds": 30000}
+        self.poll_map = {"1 сек": 1000, "2 сек": 2000, "5 сек": 5000, "10 сек": 10000,
+                         "30 сек": 30000}
         self.poll_interval_combo = QComboBox();
         self.poll_interval_combo.addItems(self.poll_map.keys())
-        general_layout.addRow("Polling Interval:", self.poll_interval_combo)
+        general_layout.addRow("Период:", self.poll_interval_combo)
         general_tab.setLayout(general_layout)
-        tabs.addTab(general_tab, "General")
+        tabs.addTab(general_tab, "Главные")
         alert_tab, alert_layout = QWidget(), QFormLayout()
         self.cpu_temp_spin = QSpinBox();
         self.cpu_temp_spin.setRange(50, 120);
@@ -856,16 +866,16 @@ class SystemMonitorApp(QMainWindow):
         self.disk_threshold_spin = QSpinBox();
         self.disk_threshold_spin.setRange(50, 100);
         self.disk_threshold_spin.setSuffix(" %")
-        self.popup_alerts_check = QCheckBox("Show popup alerts")
-        alert_layout.addRow("CPU Temp Threshold:", self.cpu_temp_spin)
-        alert_layout.addRow("GPU Temp Threshold:", self.gpu_temp_spin)
-        alert_layout.addRow("RAM Usage Threshold:", self.ram_threshold_spin)
-        alert_layout.addRow("Disk Usage Threshold:", self.disk_threshold_spin)
+        self.popup_alerts_check = QCheckBox("Показать недавние уведомления")
+        alert_layout.addRow("ЦПУ Темп ограничение:", self.cpu_temp_spin)
+        alert_layout.addRow("ГПУ Темп ограничение:", self.gpu_temp_spin)
+        alert_layout.addRow("ОЗУ Нагруз ограничение:", self.ram_threshold_spin)
+        alert_layout.addRow("Диск Нагруз ограничение:", self.disk_threshold_spin)
         alert_layout.addRow(self.popup_alerts_check)
         alert_tab.setLayout(alert_layout)
-        tabs.addTab(alert_tab, "Alerts")
+        tabs.addTab(alert_tab, "Уведомления")
         layout.addWidget(tabs)
-        save_btn = QPushButton("Save Settings");
+        save_btn = QPushButton("Сохранить настройки");
         save_btn.clicked.connect(self.save_settings)
         layout.addWidget(save_btn, 0, Qt.AlignRight)
         self.load_settings_to_ui()
@@ -889,10 +899,10 @@ class SystemMonitorApp(QMainWindow):
             self.settings['popup_alerts'] = self.popup_alerts_check.isChecked()
             self.save_settings_to_file()
             self.apply_settings()
-            QMessageBox.information(self, "Settings",
-                                    "Settings saved. A restart is required for the polling interval to take effect.")
+            QMessageBox.information(self, "Настройки",
+                                    "Настройки обновлены")
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to save settings: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось установить новые настройки: {e}")
 
     def apply_settings(self):
         pass
@@ -910,18 +920,18 @@ class SystemMonitorApp(QMainWindow):
 
     def init_reports_tab(self):
         layout = QVBoxLayout(self.reports_tab)
-        group = QGroupBox("Generate Report")
+        group = QGroupBox("Генерация отчета")
         form_layout = QFormLayout(group)
         self.report_type_combo = QComboBox()
-        self.report_type_combo.addItems(["System Summary"])
-        form_layout.addRow("Report Type:", self.report_type_combo)
+        self.report_type_combo.addItems(["Все показатели системы"])
+        form_layout.addRow("Формат отчета:", self.report_type_combo)
         group.setLayout(form_layout)
         button_layout = QHBoxLayout()
-        pdf_button = QPushButton("Generate PDF Report")
+        pdf_button = QPushButton("Сгенерировать в PDF")
         pdf_button.clicked.connect(self.generate_pdf_report)
-        xml_button = QPushButton("Generate XML Report")
+        xml_button = QPushButton("Сгенерировать в XML")
         xml_button.clicked.connect(self.generate_xml_report)
-        excel_button = QPushButton("Generate Excel Report")
+        excel_button = QPushButton("Сгенерировать в Excel")
         excel_button.clicked.connect(self.generate_excel_report)
         button_layout.addWidget(pdf_button)
         button_layout.addWidget(xml_button)
@@ -931,26 +941,84 @@ class SystemMonitorApp(QMainWindow):
         layout.addStretch()
 
     def generate_pdf_report(self):
+        # 1. Проверка на наличие библиотеки и данных
+        try:
+            from reportlab.platypus import SimpleDocTemplate
+        except ImportError:
+            QMessageBox.critical(self, "Ошибка зависимости",
+                                 "Библиотека 'reportlab' не установлена. Создание PDF-отчёта невозможно.\n"
+                                 "Пожалуйста, выполните: pip install reportlab")
+            return
+
+        if not self.historical_data:
+            QMessageBox.warning(self, "Нет данных", "Собрано недостаточно данных для создания отчёта.")
+            return
+
         try:
             filename = os.path.join(tempfile.gettempdir(),
                                     f"system_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+
             doc = SimpleDocTemplate(filename, pagesize=letter)
             styles = getSampleStyleSheet()
-            elements = [Paragraph("System Summary Report", styles['Title']), Spacer(1, 12)]
-            chart_path_cpu = os.path.join(tempfile.gettempdir(), "cpu_chart.png")
-            self.cpu_fig.savefig(chart_path_cpu)
-            elements.extend([Paragraph("<b>CPU Usage & Temperature</b>", styles['h2']),
-                             Image(chart_path_cpu, width=400, height=240), Spacer(1, 12)])
+            elements = []
+
+            # --- Заголовок ---
+            elements.append(Paragraph("Отчёт о состоянии системы", styles['Title']))
+            elements.append(
+                Paragraph(f"Сгенерировано: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+            elements.append(Spacer(1, 24))
+
+            # --- Информация о системе ---
+            elements.append(Paragraph("Информация о системе", styles['h2']))
+            uname = platform.uname()
+            mem = psutil.virtual_memory()
+            sys_info_data = [
+                ['Операционная система:', f"{uname.system} {uname.release}"],
+                ['Имя компьютера:', uname.node],
+                ['Процессор:', uname.processor],
+                ['Всего ОЗУ:', f"{(mem.total / 1e9):.2f} ГБ"],
+            ]
+            sys_info_table = Table(sys_info_data, colWidths=[120, None])
+            sys_info_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 6)
+            ]))
+            elements.append(sys_info_table)
+            elements.append(Spacer(1, 24))
+
+            # --- Функция для создания графика в памяти ---
+            def create_chart_in_memory(figure):
+                buf = io.BytesIO()
+                figure.savefig(buf, format='png', dpi=150)
+                buf.seek(0)
+                return buf
+
+            # --- График CPU ---
+            if any(v is not None for v in self.cpu_usage_points):
+                elements.append(Paragraph("Производительность CPU", styles['h2']))
+                cpu_chart_img = create_chart_in_memory(self.cpu_fig)
+                elements.append(Image(cpu_chart_img, width=450, height=270))
+                elements.append(Spacer(1, 12))
+
+            # --- График GPU ---
             if self.monitoring_active.get('gpu', True) and any(v is not None for v in self.gpu_load_points):
-                chart_path_gpu = os.path.join(tempfile.gettempdir(), "gpu_chart.png")
-                self.gpu_dashboard_fig.savefig(chart_path_gpu)
-                elements.extend([Paragraph("<b>GPU Usage & Temperature</b>", styles['h2']),
-                                 Image(chart_path_gpu, width=400, height=240)])
+                elements.append(Paragraph("Производительность GPU", styles['h2']))
+                gpu_chart_img = create_chart_in_memory(self.gpu_dashboard_fig)
+                elements.append(Image(gpu_chart_img, width=450, height=270))
+
+            # --- Сборка документа ---
             doc.build(elements)
-            QMessageBox.information(self, "Report Generated", f"PDF report saved to {filename}")
+
+            QMessageBox.information(self, "Отчёт создан", f"PDF-отчёт сохранён в:\n{filename}")
             self._open_file(filename)
+
         except Exception as e:
-            QMessageBox.critical(self, "PDF Report Error", f"Failed to generate PDF report: {e}")
+            QMessageBox.critical(self, "Ошибка создания PDF", f"Не удалось создать PDF-отчёт: {e}")
+            # Для отладки
+            import traceback
+            traceback.print_exc()
 
     def generate_xml_report(self):
         if not self.historical_data:
@@ -992,7 +1060,7 @@ class SystemMonitorApp(QMainWindow):
             pretty_xml_string = reparsed.toprettyxml(indent="  ")
             with open(filename, "w", encoding='utf-8') as f:
                 f.write(pretty_xml_string)
-            QMessageBox.information(self, "Report Generated", f"XML report saved to:\n{filename}")
+            QMessageBox.information(self, "Отчет создан", f"XML сохранен в:\n{filename}")
             self._open_file(filename)
         except Exception as e:
             QMessageBox.critical(self, "XML Report Error", f"Failed to generate XML report: {e}")
@@ -1040,7 +1108,7 @@ class SystemMonitorApp(QMainWindow):
                 ws.column_dimensions[get_column_letter(i + 1)].width = length + 2
             ws.freeze_panes = 'A2'
             wb.save(filename)
-            QMessageBox.information(self, "Report Generated", f"Excel report saved to:\n{filename}")
+            QMessageBox.information(self, "отчет сгенерирован", f"Excel сохранен в:\n{filename}")
             self._open_file(filename)
         except Exception as e:
             QMessageBox.critical(self, "Excel Report Error", f"Failed to generate Excel report: {e}")
