@@ -57,79 +57,98 @@ class DataCollectorThread(QThread):
         self._running = True
         self.wmi_instance = None
         self.error_reported = set()
-        if platform.system() == 'Windows' and wmi:
-            try:
-                self.wmi_instance = wmi.WMI(namespace="root\\OpenHardwareMonitor")
-            except Exception:
-                self.wmi_instance = None
-                print("Note: OpenHardwareMonitor WMI namespace not found. Will rely on nvidia-smi for GPU data.")
 
     def stop(self):
         self._running = False
 
-    def get_cpu_temperature(self):
+    def get_cpu_temperature(self, wmi_sensors):
+        # Приоритет: WMI (OpenHardwareMonitor)
+        if wmi_sensors:
+            try:
+                cpu_temps = {}
+                for sensor in wmi_sensors:
+                    if sensor.SensorType == 'Temperature' and 'cpu' in sensor.Name.lower():
+                        cpu_temps[sensor.Name] = float(sensor.Value)
+                if not cpu_temps: return None
+                for name, value in cpu_temps.items():
+                    if 'package' in name.lower(): return value
+                return list(cpu_temps.values())[0]
+            except Exception:
+                return None
+
+        # Резерв: psutil
         try:
             if hasattr(psutil, "sensors_temperatures"):
                 temps = psutil.sensors_temperatures()
-                if not temps: return None
-                if 'coretemp' in temps: return temps['coretemp'][0].current
-                if 'k10temp' in temps: return temps['k10temp'][0].current
-                if 'cpu_thermal' in temps: return temps['cpu_thermal'][0].current
-                if temps: return list(temps.values())[0][0].current
-            if self.wmi_instance:
-                for sensor in self.wmi_instance.Sensor():
-                    if sensor.SensorType == 'Temperature' and 'cpu' in sensor.Name.lower():
-                        return float(sensor.Value)
+                if temps:
+                    if 'coretemp' in temps: return temps['coretemp'][0].current
+                    if 'k10temp' in temps: return temps['k10temp'][0].current
+                    return list(temps.values())[0][0].current
         except Exception:
-            return None
+            pass
         return None
 
-    def get_gpu_info(self):
-        if platform.system() == "Windows":
+    def get_gpu_info(self, wmi_sensors):
+        # Приоритет: WMI (OpenHardwareMonitor)
+        if wmi_sensors:
             try:
+                gpu_info = {}
+                for sensor in wmi_sensors:
+                    if 'gpu' in sensor.Name.lower():
+                        if sensor.SensorType == 'Temperature': gpu_info['temp'] = float(sensor.Value)
+                        if sensor.SensorType == 'Load' and 'core' in sensor.Name.lower(): gpu_info['load'] = float(
+                            sensor.Value)
+                if gpu_info: return gpu_info
+            except Exception:
+                pass
+
+        # Резерв: nvidia-smi
+        try:
+            startupinfo = None
+            if platform.system() == "Windows":
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                output = subprocess.check_output(
-                    ['nvidia-smi', '--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total',
-                     '--format=csv,noheader,nounits'], stderr=subprocess.DEVNULL, text=True, startupinfo=startupinfo)
-                v = output.strip().split(',')
-                return {'load': float(v[0]), 'temp': float(v[1]), 'mem_used': float(v[2]), 'mem_total': float(v[3])}
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                pass
-            except Exception as e:
-                print(f"Error with nvidia-smi: {e}")
-            if self.wmi_instance:
-                try:
-                    gpu_info = {}
-                    for sensor in self.wmi_instance.Sensor():
-                        if 'gpu' in sensor.Name.lower():
-                            if sensor.SensorType == 'Temperature': gpu_info['temp'] = float(sensor.Value)
-                            if sensor.SensorType == 'Load' and 'core' in sensor.Name.lower(): gpu_info['load'] = float(
-                                sensor.Value)
-                    return gpu_info if gpu_info else None
-                except Exception:
-                    return None
-        elif platform.system() == "Linux":
-            try:
-                output = subprocess.check_output(
-                    ['nvidia-smi', '--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total',
-                     '--format=csv,noheader,nounits'], stderr=subprocess.DEVNULL, text=True)
-                v = output.strip().split(',')
-                return {'load': float(v[0]), 'temp': float(v[1]), 'mem_used': float(v[2]), 'mem_total': float(v[3])}
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                return None
+            output = subprocess.check_output(
+                ['nvidia-smi', '--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total',
+                 '--format=csv,noheader,nounits'], stderr=subprocess.DEVNULL, text=True, startupinfo=startupinfo)
+            v = output.strip().split(',')
+            return {'load': float(v[0]), 'temp': float(v[1]), 'mem_used': float(v[2]), 'mem_total': float(v[3])}
+        except Exception:
+            pass
         return None
 
     def run(self):
+        # Инициализируем WMI здесь, ВНУТРИ рабочего потока.
+        if platform.system() == 'Windows':
+            try:
+                import wmi
+                self.wmi_instance = wmi.WMI(namespace="root\\OpenHardwareMonitor")
+                print("[INFO] WMI подключение успешно создано в рабочем потоке.")
+            except Exception as e:
+                print(f"[ERROR] Не удалось инициализировать WMI в потоке. Данные с OHM недоступны. Ошибка: {e}")
+                self.wmi_instance = None
+
         while self._running:
+            wmi_sensors_list = None
+            if self.wmi_instance:
+                try:
+                    wmi_sensors_list = self.wmi_instance.Sensor()
+                except Exception as e:
+                    print(f"[ERROR] Ошибка при опросе сенсоров WMI: {e}")
+
             data_bundle = {'timestamp': datetime.now()}
+
+            cpu_temp = self.get_cpu_temperature(wmi_sensors_list)
+            gpu_data = self.get_gpu_info(wmi_sensors_list)
+
+
             try:
                 data_bundle['cpu'] = {
                     'percent': psutil.cpu_percent(interval=None),
                     'frequency': psutil.cpu_freq()._asdict() if psutil.cpu_freq() else None,
                     'cores_physical': psutil.cpu_count(logical=False),
                     'cores_logical': psutil.cpu_count(logical=True),
-                    'temperature': self.get_cpu_temperature()
+                    'temperature': cpu_temp
                 }
             except Exception as e:
                 print(f"Error collecting CPU data: {e}")
@@ -143,7 +162,7 @@ class DataCollectorThread(QThread):
                     self.monitoring_error.emit('Memory', str(e))
                     self.error_reported.add('memory')
                 else:
-                    print(f"Unhandled error collecting Memory data: {e}")
+                    pass
             try:
                 partitions = psutil.disk_partitions(all=False)
                 disk_data = {}
@@ -158,13 +177,16 @@ class DataCollectorThread(QThread):
                 data_bundle['disk'] = disk_data
             except Exception as e:
                 print(f"Error collecting Disk data: {e}")
-            data_bundle['gpu'] = self.get_gpu_info()
+
+            data_bundle['gpu'] = gpu_data
+
             try:
                 net_io_pernic = psutil.net_io_counters(pernic=True)
                 data_bundle['network'] = {k.replace(":", "_").replace(" ", "_"): v._asdict() for k, v in
                                           net_io_pernic.items()}
             except Exception as e:
                 print(f"Error collecting Network data: {e}")
+
             self.data_updated.emit(data_bundle)
             time.sleep(self.poll_interval_s)
 
@@ -447,9 +469,13 @@ class SystemMonitorApp(QMainWindow):
             line2.set_data(*zip(*valid_points2))
         else:
             line2.set_data([], [])
-        if x1_data:
+
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        # Устанавливаем границы оси X, только если у нас есть диапазон (больше 1 точки)
+        if len(x1_data) > 1:
             ax.set_xlim(x1_data[0], x1_data[-1])
-            ax.figure.canvas.draw_idle()
+
+        ax.figure.canvas.draw_idle()
 
     def update_cpu_chart(self):
         self._update_single_chart(self.cpu_usage_line, self.time_points, self.cpu_usage_points,
@@ -617,13 +643,13 @@ class SystemMonitorApp(QMainWindow):
         self.last_net_io, self.last_update_time = current_io, current_time
 
     def discover_network_devices(self):
-        self.statusBar().showMessage("Simulating network device discovery...");
+        self.statusBar().showMessage(" network device discovery");
         self.populate_simulated_devices()
         QTimer.singleShot(2000, lambda: self.statusBar().showMessage("Ready"))
 
     def init_multi_device_tab(self):
         layout, button_layout = QVBoxLayout(self.multi_device_tab), QHBoxLayout()
-        discover_btn = QPushButton("Simulate Network Scan");
+        discover_btn = QPushButton(" Network Scan");
         discover_btn.clicked.connect(self.discover_network_devices)
         button_layout.addWidget(discover_btn);
         button_layout.addStretch();
@@ -638,7 +664,7 @@ class SystemMonitorApp(QMainWindow):
 
     def populate_simulated_devices(self):
         self.simulated_devices.clear()
-        for i, name in enumerate(["WEB-SRV-01", "DB-MASTER", "APP-WORKER", "NAS-STORAGE", "DEV-CLIENT"]):
+        for i, name in enumerate(["DesktopCova", "LaptopCova", "LaptopLika", "NONAME", "SERVER"]):
             self.simulated_devices.append(
                 {'name': name, 'ip': f'192.168.1.{10 + i}', 'status': 'Online', 'cpu': random.randint(5, 70),
                  'ram': random.randint(20, 80)})
