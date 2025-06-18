@@ -195,8 +195,6 @@ class DataCollectorThread(QThread):
             self.data_updated.emit(data_bundle)
             time.sleep(self.poll_interval_s)
 
-
-# --- ВОССТАНОВЛЕННЫЙ КЛАСС ---
 class SpeedTestThread(QThread):
     result_ready = pyqtSignal(str)
 
